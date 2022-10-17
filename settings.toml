@@ -1,0 +1,8 @@
+clingo_path = 'C:\Program Files\clingo\clingo.exe'
+
+[default]
+rows = 3
+columns = 3
+states = 2
+objective = 1
+solver = 'internal'
