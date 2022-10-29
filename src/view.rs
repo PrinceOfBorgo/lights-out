@@ -1,7 +1,8 @@
 use crate::controllers::{ParamsController, PlayController};
 use crate::data::{Params, SolverState};
-use crate::param_textbox;
+use crate::formatters::NonZeroFormatter;
 use crate::widgets::GridWidget;
+use crate::{nonzero_textbox, usize_textbox};
 use druid::text::format::ParseFormatter;
 use druid::widget::{Button, Checkbox, Either, Flex, Label, SizedBox, TextBox, ValueTextBox};
 use druid::{
@@ -20,9 +21,9 @@ fn build_params() -> impl Widget<SolverState> {
         .with_default_spacer()
         .with_child(
             Flex::column()
-                .with_child(param_textbox!(rows))
+                .with_child(nonzero_textbox!(rows))
                 .with_default_spacer()
-                .with_child(param_textbox!(columns)),
+                .with_child(nonzero_textbox!(columns)),
         );
 
     let right = Flex::row()
@@ -35,9 +36,9 @@ fn build_params() -> impl Widget<SolverState> {
         .with_default_spacer()
         .with_child(
             Flex::column()
-                .with_child(param_textbox!(states))
+                .with_child(nonzero_textbox!(states))
                 .with_default_spacer()
-                .with_child(param_textbox!(objective)),
+                .with_child(usize_textbox!(objective)),
         );
 
     Flex::row()

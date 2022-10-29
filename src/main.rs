@@ -3,6 +3,7 @@ use druid::{AppLauncher, LocalizedString, Size, WindowDesc};
 use lazy_static::lazy_static;
 
 mod controllers;
+mod formatters;
 mod macros;
 
 mod view;
