@@ -77,25 +77,39 @@ fn build_grids() -> Box<dyn Widget<SolverState>> {
         .boxed()
 }
 
+fn build_top_row() -> impl Widget<SolverState> {
+    Flex::row()
+        .with_child(
+            Checkbox::new("Play mode")
+                .lens(Params::play)
+                .controller(PlayController {})
+                .lens(SolverState::params),
+        )
+        .with_default_spacer()
+        .with_child(
+            Button::new("Randomize").on_click(move |_ctx, data: &mut SolverState, _env| {
+                data.randomize();
+            }),
+        )
+        .with_default_spacer()
+        .with_child(
+            Label::new(|data: &SolverState, _env: &_| format!("States: {}", data.params.states))
+                .with_text_color(Color::grey(0.6)),
+        )
+        .with_default_spacer()
+        .with_child(
+            Label::new(|data: &SolverState, _env: &_| {
+                format!("Objective: {}", data.params.objective)
+            })
+            .with_text_color(Color::grey(0.6)),
+        )
+        .align_left()
+        .padding((10.0, 4.0, 10.0, 10.0))
+}
+
 pub fn build_ui() -> impl Widget<SolverState> {
     Flex::column()
-        .with_child(
-            Flex::row()
-                .with_child(
-                    Checkbox::new("Play mode")
-                        .lens(Params::play)
-                        .controller(PlayController {})
-                        .lens(SolverState::params),
-                )
-                .with_default_spacer()
-                .with_child(Button::new("Randomize").on_click(
-                    move |_ctx, data: &mut SolverState, _env| {
-                        data.randomize();
-                    },
-                ))
-                .align_left()
-                .padding((10.0, 4.0, 10.0, 10.0)),
-        )
+        .with_child(build_top_row())
         .with_child(Either::new(
             |data, _env| data.params.play,
             SizedBox::empty(),
