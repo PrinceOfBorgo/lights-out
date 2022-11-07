@@ -108,8 +108,9 @@ impl SolverState {
                     }
                     curr_col_clicks = (0..rows)
                         .map(|row| {
-                            let left_cell_state = puzzle[GridCoord { row, col }].state;
-                            (objective - left_cell_state).rem_euclid(states)
+                            let left_cell_state = puzzle[GridCoord { row, col }].state as isize;
+                            (objective as isize - left_cell_state).rem_euclid(states as isize)
+                                as usize
                         })
                         .collect();
                 }
@@ -131,8 +132,9 @@ impl SolverState {
                     }
                     curr_row_clicks = (0..columns)
                         .map(|col| {
-                            let top_cell_state = puzzle[GridCoord { row, col }].state;
-                            (objective - top_cell_state).rem_euclid(states)
+                            let top_cell_state = puzzle[GridCoord { row, col }].state as isize;
+                            (objective as isize - top_cell_state).rem_euclid(states as isize)
+                                as usize
                         })
                         .collect();
                 }
