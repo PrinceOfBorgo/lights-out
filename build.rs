@@ -24,14 +24,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_path = Path::new(&env::var("CARGO_MANIFEST_DIR")?).join("settings.toml");
     let output_path = Path::new(&output_path).join("settings.toml");
     let res = std::fs::copy(input_path, output_path);
-    println!("cargo:warning={:#?}", res);
+    println!("cargo:warning={:?}", res);
 
     #[cfg(windows)]
     {
-        let _ = WindowsResource::new()
-            // This path can be absolute, or relative to your crate root.
-            .set_icon("lights_out.ico")
-            .compile();
+        println!(
+            "cargo:warning=Setting icon: {:?}",
+            WindowsResource::new()
+                // This path can be absolute, or relative to your crate root.
+                .set_icon("lights_out.ico")
+                .compile()
+        );
     }
 
     Ok(())

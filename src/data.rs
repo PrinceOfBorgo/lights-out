@@ -82,11 +82,14 @@ impl SolverState {
     pub fn solve(&mut self) -> Result<(), SolvingError> {
         match &crate::SETTINGS.solver {
             Solver::Clingo { clingo_path } => self.solve_clingo(clingo_path.clone()),
-            Solver::Internal => self.solve_internal(),
+            Solver::Internal => {
+                self.solve_internal();
+                Ok(())
+            }
         }
     }
 
-    pub fn solve_internal(&mut self) -> Result<(), SolvingError> {
+    pub fn solve_internal(&mut self) {
         let puzzle_backup = self.params.puzzle.clone();
 
         let puzzle = &mut self.params.puzzle;
@@ -117,7 +120,7 @@ impl SolverState {
                 if puzzle.storage.iter().all(|cell| cell.state == objective) {
                     solution.error = false;
                     *puzzle = puzzle_backup;
-                    return Ok(());
+                    return;
                 }
                 *puzzle = puzzle_backup.clone();
             }
@@ -141,13 +144,12 @@ impl SolverState {
                 if puzzle.storage.iter().all(|cell| cell.state == objective) {
                     solution.error = false;
                     *puzzle = puzzle_backup;
-                    return Ok(());
+                    return;
                 }
                 *puzzle = puzzle_backup.clone();
             }
         }
         solution.error = true;
-        Ok(())
     }
 
     pub fn solve_clingo(&mut self, clingo_path: String) -> Result<(), SolvingError> {
@@ -291,7 +293,7 @@ impl Grid {
             if self.play {
                 self.click_adjacent_unchecked(coord, n);
             } else {
-                self[coord].state = (self[coord].state + n) % self.states
+                self[coord].state = (self[coord].state + n) % self.states;
             }
         }
     }
@@ -328,7 +330,10 @@ impl Grid {
         let mut rng = rand::thread_rng();
         for row in 0..self.rows {
             for col in 0..self.columns {
-                self.click_adjacent_unchecked(GridCoord { row, col }, rng.gen_range(0..self.states))
+                self.click_adjacent_unchecked(
+                    GridCoord { row, col },
+                    rng.gen_range(0..self.states),
+                );
             }
         }
     }

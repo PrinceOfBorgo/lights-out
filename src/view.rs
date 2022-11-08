@@ -124,7 +124,7 @@ pub fn build_ui() -> impl Widget<SolverState> {
                 .expand_width()
                 .on_click(move |_ctx, data: &mut SolverState, _env| {
                     if data.solve().is_err() {
-                        data.params.solution.error = true
+                        data.params.solution.error = true;
                     }
                 }),
         )
@@ -150,7 +150,7 @@ impl Rebuilder {
 
 impl Widget<SolverState> for Rebuilder {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut SolverState, env: &Env) {
-        self.inner.event(ctx, event, data, env)
+        self.inner.event(ctx, event, data, env);
     }
 
     fn lifecycle(
@@ -163,7 +163,7 @@ impl Widget<SolverState> for Rebuilder {
         if let LifeCycle::WidgetAdded = event {
             self.rebuild_inner();
         }
-        self.inner.lifecycle(ctx, event, data, env)
+        self.inner.lifecycle(ctx, event, data, env);
     }
 
     fn update(
@@ -173,11 +173,11 @@ impl Widget<SolverState> for Rebuilder {
         data: &SolverState,
         env: &Env,
     ) {
-        if !old_data.params.same(&data.params) {
+        if old_data.params.same(&data.params) {
+            self.inner.update(ctx, old_data, data, env);
+        } else {
             self.rebuild_inner();
             ctx.children_changed();
-        } else {
-            self.inner.update(ctx, old_data, data, env);
         }
     }
 
@@ -192,6 +192,6 @@ impl Widget<SolverState> for Rebuilder {
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &SolverState, env: &Env) {
-        self.inner.paint(ctx, data, env)
+        self.inner.paint(ctx, data, env);
     }
 }

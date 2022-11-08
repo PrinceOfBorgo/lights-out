@@ -18,7 +18,7 @@ impl<W: Widget<Params>> Controller<Params, W> for ParamsController {
         if data != old_data {
             ctx.submit_command(UPDATED);
         }
-        child.update(ctx, old_data, data, env)
+        child.update(ctx, old_data, data, env);
     }
 
     fn event(
@@ -33,7 +33,7 @@ impl<W: Widget<Params>> Controller<Params, W> for ParamsController {
             Event::Command(cmd) if cmd.is(UPDATED) => data.reset_grids(),
             _ => (),
         }
-        child.event(ctx, event, data, env)
+        child.event(ctx, event, data, env);
     }
 }
 
@@ -51,7 +51,7 @@ impl<W: Widget<Params>> Controller<Params, W> for PlayController {
         if data.play != old_data.play {
             ctx.submit_command(PLAY_CHANGED);
         }
-        child.update(ctx, old_data, data, env)
+        child.update(ctx, old_data, data, env);
     }
 
     fn event(
@@ -68,6 +68,6 @@ impl<W: Widget<Params>> Controller<Params, W> for PlayController {
             }
             _ => (),
         }
-        child.event(ctx, event, data, env)
+        child.event(ctx, event, data, env);
     }
 }

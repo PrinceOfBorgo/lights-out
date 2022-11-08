@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+
 use druid::{AppLauncher, LocalizedString, Size, WindowDesc};
 use lazy_static::lazy_static;
 
