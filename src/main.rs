@@ -28,7 +28,7 @@ pub fn main() {
             LocalizedString::new("lights-out-window-title").with_placeholder("Lights Out Solver"),
         )
         .window_size(Size::new(760.0, 615.0))
-        .with_min_size(Size::new(415.0, 400.0));
+        .with_min_size(Size::new(420.0, 400.0));
 
     let solver_state = SolverState::new(
         SETTINGS.rows,

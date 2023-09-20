@@ -60,7 +60,34 @@ fn build_grids() -> Box<dyn Widget<SolverState>> {
         .expand_width();
 
     let solution = Flex::column()
-        .with_child(Label::new("Solution:"))
+        .with_child(
+            Flex::row()
+                .with_flex_child(
+                    Label::new(|data: &Params, _env: &_| {
+                        if data.solve_time.is_empty() {
+                            String::new()
+                        } else {
+                            format!("({})", data.solve_time.clone())
+                        }
+                    })
+                    .with_text_color(Color::rgba(0., 0., 0., 0.))
+                    .align_right(),
+                    1.,
+                )
+                .with_child(Label::new("Solution:").center())
+                .with_flex_child(
+                    Label::new(|data: &Params, _env: &_| {
+                        if data.solve_time.is_empty() {
+                            String::new()
+                        } else {
+                            format!("({})", data.solve_time.clone())
+                        }
+                    })
+                    .with_text_color(Color::grey(0.6))
+                    .align_left(),
+                    1.,
+                ),
+        )
         .with_default_spacer()
         .with_flex_child(GridWidget::new(false).lens(Params::solution), 1.0)
         .padding(10.0)

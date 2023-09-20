@@ -1,8 +1,9 @@
 clingo_path = 'C:\Program Files\clingo\clingo.exe'
+threads = 0
 
 [default]
 rows = 3
 columns = 3
 states = 2
 objective = 1
-solver = 'internal'
+solver = 'internal_par'

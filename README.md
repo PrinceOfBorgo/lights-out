@@ -28,7 +28,7 @@ From top to bottom we find:
 * *States* and *Objective* labels: the number of possible cell states and the objective state of the current puzzle;
 * *Rows*, *Columns*, *States* and *Objective* values: controls to setup the puzzle grid size, the number of possible cell states and the objective state for the whole grid;
 * *Puzzle* grid: left-clicking on a cell of this grid, the state of the cell (and its neighbours, if in play mode) will be cyclically incremented by one (or decremented if right-clicked). The state of the cell is shown both by the color of the cell itself (black through yellow) and a numeric value (`0` through `states - 1`). The only exception is for puzzles with only two states in which case no number is shown;
-* *Solution* grid: after pressing the *Solve* button, this grid will show the number of clicks to perform on each cell of the puzzle to get to the objective configuration (i.e. all puzzle cells have state equal to `objective`). Not all puzzles are solvable, in this case (or if the solver failed for other causes) the solution grid will be painted in red.
+* *Solution* grid: after pressing the *Solve* button, this grid will show the number of clicks to perform on each cell of the puzzle to get to the objective configuration (i.e. all puzzle cells have state equal to `objective`). Not all puzzles are solvable, in this case (or if the solver failed for other causes) the solution grid will be painted in red. The solution label will show the time taken by the solver;
 * *Solve* button: press this to run the solver on the puzzle configuration.
 
 ### **Example**
@@ -48,6 +48,7 @@ The `settings.toml` file contains some default properties loaded when running th
 * `solver`: the engine used to solve the puzzle. The possible values are:
     * `clingo`: uses *clingo* to solve an *ASP* program equivalent to the given puzzle. It needs [clingo](https://potassco.org/clingo/) to be installed and the `clingo_path` value to be configured;
     * `internal`: an optimized solver written in *Rust*;
+    * `internal_par`: a parallelized version of the `internal` solver. It needs the `threads` value to be configured with the number of threads to use. If `threads` is not a positive integer, the estimated available parallelism will be used;
 
 
 
@@ -61,3 +62,6 @@ This solver uses concepts of [logic programming](https://en.wikipedia.org/wiki/L
 The `internal` solver is based on the following concept: the clicks on the first row (or column) determine the final configuration of the puzzle. This is because the only way to put the first row in the objective configuration (i.e. all the cells of the first row have state `objective`) without touching the first row itself, is to put each cell in its objective state by performing the right number of clicks on its single adjacent cell of the next row. The same reasoning applies to each following row where the clicks are determined by the configuration of the previous row. Once the last row has been reached all the above rows will be in the objective configuration and only the last one can be wrong. This means that the maximum number of solutions to try is the number of the configurations of the first row that is `states ^ columns`.
 
 Obviously, if the puzzle grid is rectangular, the number of possible solutions could be reduced by moving along the columns instead of the rows, if the columns are less than the rows. In general we must try at most `states ^ min(rows, columns)` possible configurations. For example a 10 by 20 puzzle with 2 possible states can be resolved in `2 ^ 10 = 1024` attempts.
+
+### **InternalPar**
+The `internal_par` solver uses the same mechanism of the `internal` one but computing `threads` solution in parallel at once, speeding up the resolution process.

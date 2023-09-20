@@ -5,6 +5,11 @@ use druid::{Data, Lens};
 use itertools::Itertools;
 use rand::Rng;
 use regex::Regex;
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::channel;
+use std::thread;
+use std::time::Instant;
 use std::{io::Error, string::FromUtf8Error};
 use std::{
     ops::{Index, IndexMut},
@@ -14,7 +19,8 @@ use std::{
 
 use crate::settings::Solver;
 
-const SOLVER_PROGRAM: &str = r###"% Valid clicks number in range [0, possible cell states - 1]
+const CLINGO_SOLVER_PROGRAM: &str = r"
+% Valid clicks number in range [0, possible cell states - 1]
 clicks(0..States-1) :- states(States).
 coord(1..N, 1..M) :- dim(N, M).
 
@@ -56,7 +62,7 @@ res(X, Y, Res) :-
     not objective(Obj).
 
 #show action/3.
-"###;
+";
 
 #[derive(From, Debug, Display, Error)]
 pub enum SolvingError {
@@ -80,18 +86,126 @@ impl SolverState {
     }
 
     pub fn solve(&mut self) -> Result<(), SolvingError> {
-        match &crate::SETTINGS.solver {
+        self.params.solve_time.clear();
+        let time = Instant::now();
+
+        let result = match &crate::SETTINGS.solver {
             Solver::Clingo { clingo_path } => self.solve_clingo(clingo_path.clone()),
             Solver::Internal => {
                 self.solve_internal();
                 Ok(())
             }
+            Solver::InternalPar { threads } => {
+                self.solve_internal_par(*threads);
+                Ok(())
+            }
+        };
+
+        self.params.solve_time = format!("{:?}", time.elapsed());
+        result
+    }
+
+    fn solve_internal(&mut self) {
+        let puzzle_backup = self.params.puzzle.clone();
+
+        let rows = self.params.rows;
+        let columns = self.params.columns;
+        let states = self.params.states;
+
+        self.params.solution.error = true;
+        if rows < columns {
+            for first_col_clicks in (0..rows).map(|_| 0..states).multi_cartesian_product() {
+                if self.solve_internal_by_col(&puzzle_backup, &first_col_clicks) {
+                    break;
+                }
+            }
+        } else {
+            for first_row_clicks in (0..columns).map(|_| 0..states).multi_cartesian_product() {
+                if self.solve_internal_by_row(&puzzle_backup, &first_row_clicks) {
+                    break;
+                }
+            }
         }
     }
 
-    pub fn solve_internal(&mut self) {
-        let puzzle_backup = self.params.puzzle.clone();
+    fn solve_internal_par(&mut self, threads: i64) {
+        let rows = self.params.rows;
+        let columns = self.params.columns;
+        let states = self.params.states;
 
+        let threads = if threads <= 0 {
+            thread::available_parallelism()
+                .unwrap_or(NonZeroUsize::new(1).unwrap())
+                .get()
+        } else {
+            threads as usize
+        };
+
+        let (tx, rx) = channel();
+        let solution_found = Arc::new(AtomicBool::new(false));
+
+        self.params.solution.error = true;
+        if rows < columns {
+            thread::scope(|scope| {
+                for i in 0..threads {
+                    let thread_tx = tx.clone();
+                    let solution_found = solution_found.clone();
+
+                    let mut data = self.clone();
+                    let puzzle_backup = data.params.puzzle.clone();
+                    let first_col_clicks_iter =
+                        (0..rows).map(|_| 0..states).multi_cartesian_product();
+
+                    scope.spawn(move || {
+                        for first_col_clicks in
+                            first_col_clicks_iter.clone().skip(i).step_by(threads)
+                        {
+                            if data.solve_internal_by_col(&puzzle_backup, &first_col_clicks) {
+                                solution_found.store(true, Ordering::Relaxed);
+                                let _ = thread_tx.send(data);
+                                return;
+                            } else if solution_found.load(Ordering::Relaxed) {
+                                return;
+                            }
+                        }
+                    });
+                }
+            })
+        } else {
+            thread::scope(|scope| {
+                for i in 0..threads {
+                    let thread_tx = tx.clone();
+                    let solution_found = solution_found.clone();
+
+                    let mut data = self.clone();
+                    let puzzle_backup = data.params.puzzle.clone();
+                    let first_row_clicks_iter =
+                        (0..columns).map(|_| 0..states).multi_cartesian_product();
+
+                    scope.spawn(move || {
+                        for first_row_clicks in
+                            first_row_clicks_iter.clone().skip(i).step_by(threads)
+                        {
+                            if data.solve_internal_by_row(&puzzle_backup, &first_row_clicks) {
+                                solution_found.store(true, Ordering::Relaxed);
+                                let _ = thread_tx.send(data);
+                                return;
+                            } else if solution_found.load(Ordering::Relaxed) {
+                                return;
+                            }
+                        }
+                    });
+                }
+            })
+        }
+
+        if let Ok(data) = rx.recv() {
+            *self = data;
+        }
+    }
+
+    #[inline]
+    fn solve_internal_by_col(&mut self, puzzle_backup: &Grid, first_col_clicks: &[usize]) -> bool {
         let puzzle = &mut self.params.puzzle;
         let solution = &mut self.params.solution;
 
@@ -100,60 +214,66 @@ impl SolverState {
         let states = self.params.states;
         let objective = self.params.objective;
 
-        if rows < columns {
-            for first_col_clicks in (0..rows).map(|_| 0..states).multi_cartesian_product() {
-                let mut curr_col_clicks = first_col_clicks;
-                for col in 0..columns {
-                    for row in 0..rows {
-                        solution[GridCoord { row, col }].state = curr_col_clicks[row];
-                        puzzle
-                            .click_adjacent_unchecked(GridCoord { row, col }, curr_col_clicks[row]);
-                    }
-                    curr_col_clicks = (0..rows)
-                        .map(|row| {
-                            let left_cell_state = puzzle[GridCoord { row, col }].state as isize;
-                            (objective as isize - left_cell_state).rem_euclid(states as isize)
-                                as usize
-                        })
-                        .collect();
-                }
-                if puzzle.storage.iter().all(|cell| cell.state == objective) {
-                    solution.error = false;
-                    *puzzle = puzzle_backup;
-                    return;
-                }
-                *puzzle = puzzle_backup.clone();
+        let mut curr_col_clicks = first_col_clicks.to_vec();
+        for col in 0..columns {
+            for row in 0..rows {
+                solution[GridCoord { row, col }].state = curr_col_clicks[row];
+                puzzle.click_adjacent_unchecked(GridCoord { row, col }, curr_col_clicks[row]);
             }
-        } else {
-            for first_row_clicks in (0..columns).map(|_| 0..states).multi_cartesian_product() {
-                let mut curr_row_clicks = first_row_clicks;
-                for row in 0..rows {
-                    for col in 0..columns {
-                        solution[GridCoord { row, col }].state = curr_row_clicks[col];
-                        puzzle
-                            .click_adjacent_unchecked(GridCoord { row, col }, curr_row_clicks[col]);
-                    }
-                    curr_row_clicks = (0..columns)
-                        .map(|col| {
-                            let top_cell_state = puzzle[GridCoord { row, col }].state as isize;
-                            (objective as isize - top_cell_state).rem_euclid(states as isize)
-                                as usize
-                        })
-                        .collect();
-                }
-                if puzzle.storage.iter().all(|cell| cell.state == objective) {
-                    solution.error = false;
-                    *puzzle = puzzle_backup;
-                    return;
-                }
-                *puzzle = puzzle_backup.clone();
-            }
+            curr_col_clicks = (0..rows)
+                .map(|row| {
+                    let left_cell_state = puzzle[GridCoord { row, col }].state as isize;
+                    (objective as isize - left_cell_state).rem_euclid(states as isize) as usize
+                })
+                .collect();
         }
-        solution.error = true;
+
+        if puzzle.storage.iter().all(|cell| cell.state == objective) {
+            solution.error = false;
+            *puzzle = puzzle_backup.clone();
+            true
+        } else {
+            *puzzle = puzzle_backup.clone();
+            false
+        }
     }
 
-    pub fn solve_clingo(&mut self, clingo_path: String) -> Result<(), SolvingError> {
-        std::fs::write("lights_out.lp", SOLVER_PROGRAM)?;
+    #[inline]
+    fn solve_internal_by_row(&mut self, puzzle_backup: &Grid, first_row_clicks: &[usize]) -> bool {
+        let puzzle = &mut self.params.puzzle;
+        let solution = &mut self.params.solution;
+
+        let rows = self.params.rows;
+        let columns = self.params.columns;
+        let states = self.params.states;
+        let objective = self.params.objective;
+
+        let mut curr_row_clicks = first_row_clicks.to_vec();
+        for row in 0..rows {
+            for col in 0..columns {
+                solution[GridCoord { row, col }].state = curr_row_clicks[col];
+                puzzle.click_adjacent_unchecked(GridCoord { row, col }, curr_row_clicks[col]);
+            }
+            curr_row_clicks = (0..columns)
+                .map(|col| {
+                    let top_cell_state = puzzle[GridCoord { row, col }].state as isize;
+                    (objective as isize - top_cell_state).rem_euclid(states as isize) as usize
+                })
+                .collect();
+        }
+
+        if puzzle.storage.iter().all(|cell| cell.state == objective) {
+            solution.error = false;
+            *puzzle = puzzle_backup.clone();
+            true
+        } else {
+            *puzzle = puzzle_backup.clone();
+            false
+        }
+    }
+
+    fn solve_clingo(&mut self, clingo_path: String) -> Result<(), SolvingError> {
+        std::fs::write("lights_out.lp", CLINGO_SOLVER_PROGRAM)?;
         std::fs::write("puzzle.lp", self.puzzle_to_string())?;
 
         let output = String::from_utf8(
@@ -173,6 +293,7 @@ impl SolverState {
         } else {
             self.params.solution.error = true;
         }
+
         Ok(())
     }
 
@@ -247,6 +368,8 @@ pub struct Params {
     pub solution: Grid,
     #[derivative(PartialEq = "ignore")]
     pub play: bool,
+    #[derivative(PartialEq = "ignore")]
+    pub solve_time: String,
 }
 impl Params {
     fn new(rows: usize, columns: usize, states: usize, objective: usize) -> Self {
@@ -258,6 +381,7 @@ impl Params {
             play: false,
             puzzle: Grid::new(rows, columns, states),
             solution: Grid::new(rows, columns, states),
+            solve_time: String::new(),
         }
     }
     pub fn reset_grids(&mut self) {
@@ -330,10 +454,8 @@ impl Grid {
         let mut rng = rand::thread_rng();
         for row in 0..self.rows {
             for col in 0..self.columns {
-                self.click_adjacent_unchecked(
-                    GridCoord { row, col },
-                    rng.gen_range(0..self.states),
-                );
+                let n = rng.gen_range(0..self.states);
+                self.click_adjacent_unchecked(GridCoord { row, col }, n);
             }
         }
     }

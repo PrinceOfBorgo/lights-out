@@ -8,6 +8,7 @@ use strum::{EnumIter, EnumString};
 pub enum Solver {
     Clingo { clingo_path: String },
     Internal,
+    InternalPar { threads: i64 },
 }
 
 pub struct Settings {
@@ -33,6 +34,10 @@ impl Settings {
                 Solver::Clingo { clingo_path }
             }
             Solver::Internal => solver,
+            Solver::InternalPar { threads: _ } => {
+                let threads = settings.get_int("threads")?;
+                Solver::InternalPar { threads }
+            }
         };
 
         let rows = settings.get("default.rows").unwrap_or(3);
