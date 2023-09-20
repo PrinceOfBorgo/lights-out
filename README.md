@@ -35,7 +35,7 @@ From top to bottom we find:
 
 ![](/solved_example.png)
 
-The labels on top tells us that this puzzle admits `3` states for each cell and the objective is to put them into state number `2` (bright yellow). The solution grid reveals that we can get to the objective configuration by left-clicking once on top-right and middle cells and twice on bottom-right cell.
+The labels on top tell us that this puzzle admits `3` states for each cell and the objective is to put them into state number `2` (bright yellow). The solution grid reveals that we can get to the objective configuration by left-clicking once on top-right and middle cells and twice on bottom-right cell.
 
 
 
