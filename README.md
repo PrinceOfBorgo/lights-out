@@ -64,4 +64,4 @@ The `internal` solver is based on the following concept: the clicks on the first
 Obviously, if the puzzle grid is rectangular, the number of possible solutions could be reduced by moving along the columns instead of the rows, if the columns are less than the rows. In general we must try at most `states ^ min(rows, columns)` possible configurations. For example a 10 by 20 puzzle with 2 possible states can be resolved in `2 ^ 10 = 1024` attempts.
 
 ### **InternalPar**
-The `internal_par` solver uses the same mechanism of the `internal` one but computing `threads` solution in parallel at once, speeding up the resolution process.
+The `internal_par` solver uses the same mechanism of the `internal` one but computing `threads` solution in parallel at once, speeding up the resolution process for bigger grids.
