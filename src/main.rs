@@ -1,22 +1,18 @@
 #![windows_subsystem = "windows"]
-
-use druid::{AppLauncher, LocalizedString, Size, WindowDesc};
-use lazy_static::lazy_static;
-
 mod controllers;
+mod data;
 mod formatters;
 mod macros;
-
+mod settings;
+mod solver;
 mod view;
-use view::build_ui;
-
-mod data;
-use data::SolverState;
-
 mod widgets;
 
-mod settings;
+use data::SolverState;
+use druid::{AppLauncher, LocalizedString, Size, WindowDesc};
+use lazy_static::lazy_static;
 use settings::Settings;
+use view::build_ui;
 
 lazy_static! {
     static ref SETTINGS: Settings = Settings::new().unwrap();

@@ -30,9 +30,13 @@ impl<W: Widget<Params>> Controller<Params, W> for ParamsController {
         env: &druid::Env,
     ) {
         match event {
-            Event::Command(cmd) if cmd.is(UPDATED) => data.reset_grids(),
+            Event::Command(cmd) if cmd.is(UPDATED) => {
+                data.solve_time.clear();
+                data.reset_grids()
+            }
             _ => (),
         }
+        data.objective %= data.states;
         child.event(ctx, event, data, env);
     }
 }

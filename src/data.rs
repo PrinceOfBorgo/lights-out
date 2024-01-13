@@ -4,65 +4,15 @@ use derive_more::{Display, Error, From};
 use druid::{Data, Lens};
 use itertools::Itertools;
 use rand::Rng;
-use regex::Regex;
-use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::channel;
-use std::thread;
 use std::time::Instant;
 use std::{io::Error, string::FromUtf8Error};
 use std::{
     ops::{Index, IndexMut},
-    process::Command,
     sync::Arc,
 };
 
 use crate::settings::Solver;
-
-const CLINGO_SOLVER_PROGRAM: &str = r"
-% Valid clicks number in range [0, possible cell states - 1]
-clicks(0..States-1) :- states(States).
-coord(1..N, 1..M) :- dim(N, M).
-
-% Replace undefined cells with 0-state cells
-cell(X, Y, 0) :- 
-    coord(X, Y),
-    0 { cell(X, Y, State): clicks(State), State > 0 } 0.
-% Cells with same coordinates cannot have different states
-:- cell(X, Y, State1), cell(X, Y, State2), State1 != State2.
-
-% Cells with coordinates (X,Y) and (A,B) are adjacent (or the same cell)
-adjacent(X, Y, A, B) :-
-    |X - A| + |Y - B| <= 1,
-    coord(X, Y),
-    coord(A, B).
-
-% Consider one action for each cell. Every action consist on 0 or more clicks
-1 { action(X, Y, Clicks) : clicks(Clicks) } 1 :- coord(X, Y).
-% Minimize the number of clicks to solve the puzzle
-:~ action(X, Y, Clicks). [Clicks@1, X, Y]
-
-% Sum the total clicks of cells adjacent to cell (X, Y)
-sumClicks(X, Y, Sum) :-
-    coord(X, Y),
-    Sum = #sum{ Clicks, A, B : adjacent(A, B, X, Y), action(A, B, Clicks) }.
-
-% Set resulting grid cells adding the total clicks of its adjacent cells
-res(X, Y, Res) :- 
-    cell(X, Y, Curr),
-    Res = (Curr + Sum) \ States,    % modulo operation to wrap the result
-    states(States),
-    sumClicks(X, Y, Sum),
-    coord(X, Y), 
-    clicks(Curr).
-
-% Solution condition: resulting grid cells must be set to objective state
-:- res(X, Y, Obj),
-    coord(X, Y),
-    not objective(Obj).
-
-#show action/3.
-";
+use crate::solver::{self, Solver as SolverTrait};
 
 #[derive(From, Debug, Display, Error)]
 pub enum SolvingError {
@@ -89,264 +39,22 @@ impl SolverState {
         self.params.solve_time.clear();
         let time = Instant::now();
 
-        let result = match &crate::SETTINGS.solver {
-            Solver::Clingo { clingo_path } => self.solve_clingo(clingo_path.clone()),
-            Solver::Internal => {
-                self.solve_internal();
-                Ok(())
-            }
-            Solver::InternalPar { threads } => {
-                self.solve_internal_par(*threads);
-                Ok(())
-            }
+        let solver: Box<dyn SolverTrait> = match crate::SETTINGS.solver {
+            Solver::Clingo { ref clingo_path } => Box::new(solver::Clingo {
+                clingo_path: clingo_path.clone(),
+            }),
+            Solver::Internal => Box::new(solver::Internal),
+            Solver::InternalPar { threads } => Box::new(solver::InternalPar { threads }),
         };
+
+        let result = solver.solve(self);
 
         self.params.solve_time = format!("{:?}", time.elapsed());
         result
     }
 
-    fn solve_internal(&mut self) {
-        let puzzle_backup = self.params.puzzle.clone();
-
-        let rows = self.params.rows;
-        let columns = self.params.columns;
-        let states = self.params.states;
-
-        self.params.solution.error = true;
-        if rows < columns {
-            for first_col_clicks in (0..rows).map(|_| 0..states).multi_cartesian_product() {
-                if self.solve_internal_by_col(&puzzle_backup, &first_col_clicks) {
-                    break;
-                }
-            }
-        } else {
-            for first_row_clicks in (0..columns).map(|_| 0..states).multi_cartesian_product() {
-                if self.solve_internal_by_row(&puzzle_backup, &first_row_clicks) {
-                    break;
-                }
-            }
-        }
-    }
-
-    fn solve_internal_par(&mut self, threads: i64) {
-        let rows = self.params.rows;
-        let columns = self.params.columns;
-        let states = self.params.states;
-
-        let threads = if threads <= 0 {
-            thread::available_parallelism()
-                .unwrap_or(NonZeroUsize::new(1).unwrap())
-                .get()
-        } else {
-            threads as usize
-        };
-
-        let (tx, rx) = channel();
-        let solution_found = Arc::new(AtomicBool::new(false));
-
-        self.params.solution.error = true;
-        if rows < columns {
-            thread::scope(|scope| {
-                for i in 0..threads {
-                    let thread_tx = tx.clone();
-                    let solution_found = solution_found.clone();
-
-                    let mut data = self.clone();
-                    let puzzle_backup = data.params.puzzle.clone();
-                    let first_col_clicks_iter =
-                        (0..rows).map(|_| 0..states).multi_cartesian_product();
-
-                    scope.spawn(move || {
-                        for first_col_clicks in
-                            first_col_clicks_iter.clone().skip(i).step_by(threads)
-                        {
-                            if data.solve_internal_by_col(&puzzle_backup, &first_col_clicks) {
-                                solution_found.store(true, Ordering::Relaxed);
-                                let _ = thread_tx.send(data);
-                                return;
-                            } else if solution_found.load(Ordering::Relaxed) {
-                                return;
-                            }
-                        }
-                    });
-                }
-            })
-        } else {
-            thread::scope(|scope| {
-                for i in 0..threads {
-                    let thread_tx = tx.clone();
-                    let solution_found = solution_found.clone();
-
-                    let mut data = self.clone();
-                    let puzzle_backup = data.params.puzzle.clone();
-                    let first_row_clicks_iter =
-                        (0..columns).map(|_| 0..states).multi_cartesian_product();
-
-                    scope.spawn(move || {
-                        for first_row_clicks in
-                            first_row_clicks_iter.clone().skip(i).step_by(threads)
-                        {
-                            if data.solve_internal_by_row(&puzzle_backup, &first_row_clicks) {
-                                solution_found.store(true, Ordering::Relaxed);
-                                let _ = thread_tx.send(data);
-                                return;
-                            } else if solution_found.load(Ordering::Relaxed) {
-                                return;
-                            }
-                        }
-                    });
-                }
-            })
-        }
-
-        if let Ok(data) = rx.recv() {
-            *self = data;
-        }
-    }
-
-    #[inline]
-    fn solve_internal_by_col(&mut self, puzzle_backup: &Grid, first_col_clicks: &[usize]) -> bool {
-        let puzzle = &mut self.params.puzzle;
-        let solution = &mut self.params.solution;
-
-        let rows = self.params.rows;
-        let columns = self.params.columns;
-        let states = self.params.states;
-        let objective = self.params.objective;
-
-        let mut curr_col_clicks = first_col_clicks.to_vec();
-        for col in 0..columns {
-            for row in 0..rows {
-                solution[GridCoord { row, col }].state = curr_col_clicks[row];
-                puzzle.click_adjacent_unchecked(GridCoord { row, col }, curr_col_clicks[row]);
-            }
-            curr_col_clicks = (0..rows)
-                .map(|row| {
-                    let left_cell_state = puzzle[GridCoord { row, col }].state as isize;
-                    (objective as isize - left_cell_state).rem_euclid(states as isize) as usize
-                })
-                .collect();
-        }
-
-        if puzzle.storage.iter().all(|cell| cell.state == objective) {
-            solution.error = false;
-            *puzzle = puzzle_backup.clone();
-            true
-        } else {
-            *puzzle = puzzle_backup.clone();
-            false
-        }
-    }
-
-    #[inline]
-    fn solve_internal_by_row(&mut self, puzzle_backup: &Grid, first_row_clicks: &[usize]) -> bool {
-        let puzzle = &mut self.params.puzzle;
-        let solution = &mut self.params.solution;
-
-        let rows = self.params.rows;
-        let columns = self.params.columns;
-        let states = self.params.states;
-        let objective = self.params.objective;
-
-        let mut curr_row_clicks = first_row_clicks.to_vec();
-        for row in 0..rows {
-            for col in 0..columns {
-                solution[GridCoord { row, col }].state = curr_row_clicks[col];
-                puzzle.click_adjacent_unchecked(GridCoord { row, col }, curr_row_clicks[col]);
-            }
-            curr_row_clicks = (0..columns)
-                .map(|col| {
-                    let top_cell_state = puzzle[GridCoord { row, col }].state as isize;
-                    (objective as isize - top_cell_state).rem_euclid(states as isize) as usize
-                })
-                .collect();
-        }
-
-        if puzzle.storage.iter().all(|cell| cell.state == objective) {
-            solution.error = false;
-            *puzzle = puzzle_backup.clone();
-            true
-        } else {
-            *puzzle = puzzle_backup.clone();
-            false
-        }
-    }
-
-    fn solve_clingo(&mut self, clingo_path: String) -> Result<(), SolvingError> {
-        std::fs::write("lights_out.lp", CLINGO_SOLVER_PROGRAM)?;
-        std::fs::write("puzzle.lp", self.puzzle_to_string())?;
-
-        let output = String::from_utf8(
-            Command::new(clingo_path)
-                .args(["lights_out.lp", "puzzle.lp", "-V0", "-q1"])
-                .output()?
-                .stdout,
-        )?;
-
-        std::fs::remove_file("lights_out.lp")?;
-        std::fs::remove_file("puzzle.lp")?;
-
-        let lines: Vec<&str> = output.lines().collect();
-        if lines.len() == 3 {
-            self.solution_from_string(lines[0])?;
-            self.params.solution.error = false;
-        } else {
-            self.params.solution.error = true;
-        }
-
-        Ok(())
-    }
-
-    fn puzzle_to_string(&self) -> String {
-        let rows = self.params.rows;
-        let columns = self.params.columns;
-        let states = self.params.states;
-        let objective = self.params.objective;
-
-        let mut str = format!("dim({rows},{columns}).states({states}).objective({objective}).");
-        for i in 1..=rows {
-            for j in 1..=columns {
-                let coord = GridCoord {
-                    row: i - 1,
-                    col: j - 1,
-                };
-                let cell = self.params.puzzle[coord].state;
-                if cell != 0 {
-                    str += format!("cell({i},{j},{cell}).").as_str();
-                }
-            }
-        }
-
-        str
-    }
-
-    #[inline]
-    fn solution_from_string(&mut self, str: &str) -> Result<(), ParsingError> {
-        let mut str = String::from(str);
-        str.retain(|c| !c.is_whitespace());
-
-        let validation_re = Regex::new(r"^(action\(\d+,\d+,\d+\)\s*)*$").unwrap();
-        if !validation_re.is_match(&str) {
-            return Err(ParsingError);
-        }
-
-        let re = Regex::new(r"action\((?P<i>\d+),(?P<j>\d+),(?P<v>\d+)\)").unwrap();
-        for c in re.captures_iter(&str) {
-            let i = c.name("i").unwrap().as_str().parse::<usize>().unwrap();
-            let j = c.name("j").unwrap().as_str().parse::<usize>().unwrap();
-            let v = c.name("v").unwrap().as_str().parse::<usize>().unwrap();
-
-            let coord = GridCoord {
-                row: i - 1,
-                col: j - 1,
-            };
-            self.params.solution[coord].state = v;
-        }
-
-        Ok(())
-    }
-
     pub fn randomize(&mut self) {
+        self.params.solve_time.clear();
         Arc::make_mut(&mut self.params.puzzle.storage).fill(Cell {
             state: self.params.objective,
         });
@@ -395,7 +103,7 @@ pub struct Grid {
     pub(crate) rows: usize,
     pub(crate) columns: usize,
     pub(crate) states: usize,
-    storage: Arc<Vec<Cell>>,
+    pub(crate) storage: Arc<Vec<Cell>>,
     pub error: bool,
     pub play: bool,
 }
@@ -422,7 +130,7 @@ impl Grid {
         }
     }
 
-    fn click_adjacent_unchecked(&mut self, coord: GridCoord, n: usize) {
+    pub(crate) fn click_adjacent_unchecked(&mut self, coord: GridCoord, n: usize) {
         let coords = self.adjacent(coord);
         coords
             .iter()
@@ -450,7 +158,7 @@ impl Grid {
         adj
     }
 
-    fn random_clicks(&mut self) {
+    pub(crate) fn random_clicks(&mut self) {
         let mut rng = rand::thread_rng();
         for row in 0..self.rows {
             for col in 0..self.columns {
