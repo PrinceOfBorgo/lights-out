@@ -45,6 +45,17 @@ impl Settings {
         let states = settings.get("default.states").unwrap_or(2);
         let objective = settings.get("default.objective").unwrap_or(1);
 
+        if rows == 0 || columns == 0 || states == 0 {
+            return Err(ConfigError::Message(String::from(
+                "rows, columns and states must be greater than 0",
+            )));
+        }
+        if objective >= states {
+            return Err(ConfigError::Message(format!(
+                "objective ({objective}) must be less than states ({states})"
+            )));
+        }
+
         Ok(Self {
             solver,
             rows,

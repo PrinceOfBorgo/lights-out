@@ -140,7 +140,11 @@ impl Widget<Grid> for GridWidget {
                     let coord = GridCoord { row, col };
 
                     let cell_state = data[coord].state;
-                    let v = cell_state as f64 / (data.states as f64 - 1.0);
+                    let v = if data.states > 1 {
+                        cell_state as f64 / (data.states as f64 - 1.0)
+                    } else {
+                        0.0
+                    };
                     let (r, g, b);
                     if self.active {
                         r = v;

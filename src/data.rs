@@ -39,7 +39,7 @@ impl SolverState {
         self.params.solve_time.clear();
         let time = Instant::now();
 
-        let solver: Box<dyn SolverTrait> = match crate::SETTINGS.solver {
+        let solver: Box<dyn SolverTrait> = match crate::settings().solver {
             Solver::Clingo { ref clingo_path } => Box::new(solver::Clingo {
                 clingo_path: clingo_path.clone(),
             }),
