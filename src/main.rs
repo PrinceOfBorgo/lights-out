@@ -19,7 +19,7 @@ lazy_static! {
 }
 
 pub fn main() {
-    let window = WindowDesc::new(build_ui)
+    let window = WindowDesc::new(build_ui())
         .title(
             LocalizedString::new("lights-out-window-title").with_placeholder("Lights Out Solver"),
         )

@@ -1,7 +1,4 @@
-use druid::text::{
-    format::{Formatter, Validation, ValidationError},
-    Selection,
-};
+use druid::text::{Formatter, Selection, Validation, ValidationError};
 use std::num::NonZeroUsize;
 
 pub struct NonZeroFormatter;

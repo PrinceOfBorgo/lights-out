@@ -3,10 +3,10 @@ use crate::data::{Params, SolverState};
 use crate::formatters::NonZeroFormatter;
 use crate::widgets::GridWidget;
 use crate::{nonzero_textbox, usize_textbox};
-use druid::text::format::ParseFormatter;
+use druid::text::ParseFormatter;
 use druid::widget::{Button, Checkbox, Either, Flex, Label, SizedBox, TextBox, ValueTextBox};
 use druid::{
-    BoxConstraints, Color, Data, Env, Event, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx,
+    BoxConstraints, Color, Env, Event, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx,
     PaintCtx, UpdateCtx, Widget, WidgetExt,
 };
 
@@ -200,7 +200,8 @@ impl Widget<SolverState> for Rebuilder {
         data: &SolverState,
         env: &Env,
     ) {
-        if old_data.params.same(&data.params) {
+        // Params equality only compares rows, columns and states.
+        if old_data.params == data.params {
             self.inner.update(ctx, old_data, data, env);
         } else {
             self.rebuild_inner();

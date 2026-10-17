@@ -1,19 +1,20 @@
 [package]
 name = "lights_out"
 version = "0.1.0"
+authors = ["Michele Medori <princeofborgo@hotmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-config = "0.13.1"
+config = "0.15.27"
 derivative = "2.2.0"
-derive_more = "0.99.17"
-druid = "0.7.0"
-lazy_static = "1.4.0"
-regex = "1.5.4"
-rand = "0.8.5"
-itertools = "0.10.5"
-strum = { version = "0.24", features = ["derive"] }
+derive_more = { version = "2.1.1", features = ["full"] }
+druid = "0.8.3"
+lazy_static = "1.5.1"
+regex = "1.13.1"
+rand = "0.10.3"
+itertools = "0.15.0"
+strum = { version = "0.28.0", features = ["derive"] }
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1.12"

@@ -3,7 +3,7 @@ use derivative::Derivative;
 use derive_more::{Display, Error, From};
 use druid::{Data, Lens};
 use itertools::Itertools;
-use rand::Rng;
+use rand::RngExt;
 use std::time::Instant;
 use std::{io::Error, string::FromUtf8Error};
 use std::{
@@ -159,10 +159,10 @@ impl Grid {
     }
 
     pub(crate) fn random_clicks(&mut self) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for row in 0..self.rows {
             for col in 0..self.columns {
-                let n = rng.gen_range(0..self.states);
+                let n = rng.random_range(0..self.states);
                 self.click_adjacent_unchecked(GridCoord { row, col }, n);
             }
         }

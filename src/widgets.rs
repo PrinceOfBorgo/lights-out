@@ -63,7 +63,10 @@ impl Widget<Grid> for GridWidget {
     fn lifecycle(&mut self, _ctx: &mut LifeCycleCtx, _event: &LifeCycle, _data: &Grid, _env: &Env) {
     }
 
-    fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &Grid, _data: &Grid, _env: &Env) {
+    fn update(&mut self, ctx: &mut UpdateCtx, old_data: &Grid, data: &Grid, _env: &Env) {
+        if old_data.rows != data.rows || old_data.columns != data.columns {
+            ctx.request_layout();
+        }
         ctx.request_paint();
     }
 

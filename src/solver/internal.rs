@@ -117,6 +117,7 @@ impl Solver for InternalPar {
             })
         }
 
+        drop(tx);
         if let Ok(solved) = rx.recv() {
             *data = solved;
         }
