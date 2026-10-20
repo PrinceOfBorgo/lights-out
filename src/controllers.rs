@@ -1,8 +1,30 @@
-use crate::data::Params;
+use crate::data::{Params, SolveResult, SolverState};
 use druid::{widget::Controller, Event, Selector, Widget};
 
 const UPDATED: Selector = Selector::new("lights_out.update_textbox");
 const PLAY_CHANGED: Selector = Selector::new("lights_out.play_changed");
+pub const SOLVE_FINISHED: Selector<SolveResult> = Selector::new("lights_out.solve_finished");
+
+pub struct SolveController;
+
+impl<W: Widget<SolverState>> Controller<SolverState, W> for SolveController {
+    fn event(
+        &mut self,
+        child: &mut W,
+        ctx: &mut druid::EventCtx,
+        event: &druid::Event,
+        data: &mut SolverState,
+        env: &druid::Env,
+    ) {
+        match event {
+            Event::Command(cmd) if cmd.is(SOLVE_FINISHED) => {
+                data.finish_solve(cmd.get_unchecked(SOLVE_FINISHED));
+                ctx.set_handled();
+            }
+            _ => child.event(ctx, event, data, env),
+        }
+    }
+}
 
 pub struct ParamsController;
 

@@ -1,18 +1,26 @@
 use core::fmt::Debug;
 use derivative::Derivative;
 use derive_more::{Display, Error, From};
-use druid::{Data, Lens};
+use druid::{Data, ExtEventSink, Lens, Target};
 use itertools::Itertools;
 use rand::RngExt;
-use std::time::Instant;
-use std::{io::Error, string::FromUtf8Error};
 use std::{
+    io::Error,
     ops::{Index, IndexMut},
-    sync::Arc,
+    string::FromUtf8Error,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread,
+    time::Instant,
 };
 
-use crate::settings::Solver;
-use crate::solver::{self, Solver as SolverTrait};
+use crate::{
+    controllers::SOLVE_FINISHED,
+    settings::Solver,
+    solver::{self, Solver as SolverTrait},
+};
 
 #[derive(From, Debug, Display, Error)]
 pub enum SolvingError {
@@ -23,20 +31,66 @@ pub enum SolvingError {
 #[derive(Debug, Display, Error)]
 pub struct ParsingError;
 
+pub struct SolveResult {
+    cancel: Arc<AtomicBool>,
+    solution: Grid,
+    solve_time: String,
+}
+
 #[derive(Clone, Data, Lens)]
 pub struct SolverState {
     pub params: Params,
+    pub solving: bool,
+    #[data(ignore)]
+    cancel: Arc<AtomicBool>,
 }
 
 impl SolverState {
     pub fn new(rows: usize, columns: usize, states: usize, objective: usize) -> Self {
         Self {
             params: Params::new(rows, columns, states, objective),
+            solving: false,
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn solve(&mut self) -> Result<(), SolvingError> {
+    pub fn start_solve(&mut self, sink: ExtEventSink) {
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.cancel = cancel.clone();
+        self.solving = true;
+        self.params.solve_time = String::from("Solving...");
+
+        let mut state = self.clone();
+        thread::spawn(move || {
+            if state.solve(&cancel).is_err() {
+                state.params.solution.error = true;
+            }
+            let result = SolveResult {
+                cancel,
+                solution: state.params.solution,
+                solve_time: state.params.solve_time,
+            };
+            let _ = sink.submit_command(SOLVE_FINISHED, Box::new(result), Target::Auto);
+        });
+    }
+
+    pub fn cancel_solve(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        self.solving = false;
         self.params.solve_time.clear();
+    }
+
+    pub fn finish_solve(&mut self, result: &SolveResult) {
+        // Results of cancelled solves are stale
+        if result.cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        self.solving = false;
+        self.params.solution = result.solution.clone();
+        self.params.solve_time = result.solve_time.clone();
+    }
+
+    fn solve(&mut self, cancel: &AtomicBool) -> Result<(), SolvingError> {
         let time = Instant::now();
 
         let solver: Box<dyn SolverTrait> = match crate::settings().solver {
@@ -47,7 +101,7 @@ impl SolverState {
             Solver::InternalPar { threads } => Box::new(solver::InternalPar { threads }),
         };
 
-        let result = solver.solve(self);
+        let result = solver.solve(self, cancel);
 
         self.params.solve_time = format!("{:?}", time.elapsed());
         result

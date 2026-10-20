@@ -14,7 +14,7 @@ use std::{
 pub struct Internal;
 
 impl Solver for Internal {
-    fn solve(&self, data: &mut SolverState) -> Result<(), SolvingError> {
+    fn solve(&self, data: &mut SolverState, cancel: &AtomicBool) -> Result<(), SolvingError> {
         let puzzle_backup = data.params.puzzle.clone();
 
         let rows = data.params.rows;
@@ -24,13 +24,17 @@ impl Solver for Internal {
         data.params.solution.error = true;
         if rows < columns {
             for first_col_clicks in (0..rows).map(|_| 0..states).multi_cartesian_product() {
-                if solve_internal_by_col(data, &puzzle_backup, &first_col_clicks) {
+                if cancel.load(Ordering::Relaxed)
+                    || solve_internal_by_col(data, &puzzle_backup, &first_col_clicks)
+                {
                     break;
                 }
             }
         } else {
             for first_row_clicks in (0..columns).map(|_| 0..states).multi_cartesian_product() {
-                if solve_internal_by_row(data, &puzzle_backup, &first_row_clicks) {
+                if cancel.load(Ordering::Relaxed)
+                    || solve_internal_by_row(data, &puzzle_backup, &first_row_clicks)
+                {
                     break;
                 }
             }
@@ -45,7 +49,7 @@ pub struct InternalPar {
 }
 
 impl Solver for InternalPar {
-    fn solve(&self, data: &mut SolverState) -> Result<(), SolvingError> {
+    fn solve(&self, data: &mut SolverState, cancel: &AtomicBool) -> Result<(), SolvingError> {
         let threads = if self.threads == 0 {
             thread::available_parallelism()
                 .unwrap_or(NonZeroUsize::new(1).unwrap())
@@ -82,7 +86,9 @@ impl Solver for InternalPar {
                                 solution_found.store(true, Ordering::Relaxed);
                                 let _ = thread_tx.send(data);
                                 return;
-                            } else if solution_found.load(Ordering::Relaxed) {
+                            } else if solution_found.load(Ordering::Relaxed)
+                                || cancel.load(Ordering::Relaxed)
+                            {
                                 return;
                             }
                         }
@@ -108,7 +114,9 @@ impl Solver for InternalPar {
                                 solution_found.store(true, Ordering::Relaxed);
                                 let _ = thread_tx.send(data);
                                 return;
-                            } else if solution_found.load(Ordering::Relaxed) {
+                            } else if solution_found.load(Ordering::Relaxed)
+                                || cancel.load(Ordering::Relaxed)
+                            {
                                 return;
                             }
                         }

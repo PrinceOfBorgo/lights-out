@@ -1,4 +1,4 @@
-use crate::controllers::{ParamsController, PlayController};
+use crate::controllers::{ParamsController, PlayController, SolveController};
 use crate::data::{Params, SolverState};
 use crate::formatters::NonZeroFormatter;
 use crate::widgets::GridWidget;
@@ -6,8 +6,8 @@ use crate::{nonzero_textbox, usize_textbox};
 use druid::text::ParseFormatter;
 use druid::widget::{Button, Checkbox, Either, Flex, Label, SizedBox, TextBox, ValueTextBox};
 use druid::{
-    BoxConstraints, Color, Env, Event, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx,
-    PaintCtx, UpdateCtx, Widget, WidgetExt,
+    BoxConstraints, Color, Env, Event, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx, PaintCtx,
+    UpdateCtx, Widget, WidgetExt,
 };
 
 fn build_params() -> impl Widget<SolverState> {
@@ -51,11 +51,14 @@ fn build_params() -> impl Widget<SolverState> {
         .lens(SolverState::params)
 }
 
-fn build_grids() -> Box<dyn Widget<SolverState>> {
+fn build_grids(puzzle_active: bool) -> Box<dyn Widget<SolverState>> {
     let puzzle = Flex::column()
         .with_child(Label::new("Puzzle:"))
         .with_default_spacer()
-        .with_flex_child(GridWidget::new(true).lens(Params::puzzle), 1.0)
+        .with_flex_child(
+            GridWidget::new(puzzle_active, (1.0, 1.0, 0.0)).lens(Params::puzzle),
+            1.0,
+        )
         .padding(10.0)
         .expand_width();
 
@@ -89,7 +92,10 @@ fn build_grids() -> Box<dyn Widget<SolverState>> {
                 ),
         )
         .with_default_spacer()
-        .with_flex_child(GridWidget::new(false).lens(Params::solution), 1.0)
+        .with_flex_child(
+            GridWidget::new(false, (0.0, 0.5, 1.0)).lens(Params::solution),
+            1.0,
+        )
         .padding(10.0)
         .expand_width();
 
@@ -135,27 +141,37 @@ fn build_top_row() -> impl Widget<SolverState> {
 }
 
 pub fn build_ui() -> impl Widget<SolverState> {
+    let is_solving = |data: &SolverState, _env: &Env| data.solving;
+
     Flex::column()
-        .with_child(build_top_row())
-        .with_child(Either::new(
-            |data, _env| data.params.play,
-            SizedBox::empty(),
-            build_params(),
-        ))
+        .with_child(build_top_row().disabled_if(is_solving))
+        .with_child(
+            Either::new(
+                |data, _env| data.params.play,
+                SizedBox::empty(),
+                build_params(),
+            )
+            .disabled_if(is_solving),
+        )
         .with_default_spacer()
         .with_flex_child(Rebuilder::new(), 1.0)
         .with_default_spacer()
         .with_child(
-            Button::new("Solve")
-                .fix_height(70.0)
-                .expand_width()
-                .on_click(move |_ctx, data: &mut SolverState, _env| {
-                    if data.solve().is_err() {
-                        data.params.solution.error = true;
-                    }
-                }),
+            Button::dynamic(|data: &SolverState, _env| {
+                String::from(if data.solving { "Stop" } else { "Solve" })
+            })
+            .fix_height(70.0)
+            .expand_width()
+            .on_click(move |ctx, data: &mut SolverState, _env| {
+                if data.solving {
+                    data.cancel_solve();
+                } else {
+                    data.start_solve(ctx.get_external_handle());
+                }
+            }),
         )
         .padding(10.0)
+        .controller(SolveController)
 }
 
 /// builds a child Flex widget from some paramaters.
@@ -170,8 +186,8 @@ impl Rebuilder {
         }
     }
 
-    fn rebuild_inner(&mut self) {
-        self.inner = build_grids();
+    fn rebuild_inner(&mut self, data: &SolverState) {
+        self.inner = build_grids(!data.solving);
     }
 }
 
@@ -188,7 +204,7 @@ impl Widget<SolverState> for Rebuilder {
         env: &Env,
     ) {
         if let LifeCycle::WidgetAdded = event {
-            self.rebuild_inner();
+            self.rebuild_inner(data);
         }
         self.inner.lifecycle(ctx, event, data, env);
     }
@@ -201,10 +217,10 @@ impl Widget<SolverState> for Rebuilder {
         env: &Env,
     ) {
         // Params equality only compares rows, columns and states.
-        if old_data.params == data.params {
+        if old_data.params == data.params && old_data.solving == data.solving {
             self.inner.update(ctx, old_data, data, env);
         } else {
-            self.rebuild_inner();
+            self.rebuild_inner(data);
             ctx.children_changed();
         }
     }

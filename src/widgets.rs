@@ -11,14 +11,16 @@ use crate::data::{Grid, GridCoord};
 pub struct GridWidget {
     cell_size: Size,
     active: bool,
+    rgb_coefficients: (f64, f64, f64),
     hot_cell: Option<GridCoord>,
 }
 
 impl GridWidget {
-    pub fn new(active: bool) -> Self {
+    pub fn new(active: bool, rgb_coefficients: (f64, f64, f64)) -> Self {
         Self {
             cell_size: Size::new(0.0, 0.0),
             active,
+            rgb_coefficients,
             hot_cell: None,
         }
     }
@@ -145,16 +147,11 @@ impl Widget<Grid> for GridWidget {
                     } else {
                         0.0
                     };
-                    let (r, g, b);
-                    if self.active {
-                        r = v;
-                        g = v;
-                        b = 0.0;
-                    } else {
-                        r = 0.0;
-                        g = v * 0.5;
-                        b = v;
-                    };
+
+                    let r = self.rgb_coefficients.0 * v;
+                    let g = self.rgb_coefficients.1 * v;
+                    let b = self.rgb_coefficients.2 * v;
+
                     let cell_color = Color::rgb(r, g, b);
 
                     let point = Point {

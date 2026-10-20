@@ -1,7 +1,13 @@
 use super::Solver;
 use crate::data::{GridCoord, ParsingError, SolverState, SolvingError};
 use regex::Regex;
-use std::process::Command;
+use std::{
+    io::Read,
+    process::{Command, Stdio},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    thread,
+    time::Duration,
+};
 
 const CLINGO_SOLVER_PROGRAM: &str = r"
 % Valid clicks number in range [0, possible cell states - 1]
@@ -48,24 +54,34 @@ res(X, Y, Res) :-
 #show action/3.
 ";
 
+static SOLVE_ID: AtomicUsize = AtomicUsize::new(0);
+
 pub struct Clingo {
     pub clingo_path: String,
 }
 
 impl Solver for Clingo {
-    fn solve(&self, data: &mut SolverState) -> Result<(), SolvingError> {
-        std::fs::write("lights_out.lp", CLINGO_SOLVER_PROGRAM)?;
-        std::fs::write("puzzle.lp", puzzle_to_string(data))?;
+    fn solve(&self, data: &mut SolverState, cancel: &AtomicBool) -> Result<(), SolvingError> {
+        // Unique names so a cancelled run's cleanup can't delete a newer run's files
+        let id = format!(
+            "{}_{}",
+            std::process::id(),
+            SOLVE_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let program_file = format!("lights_out_{id}.lp");
+        let puzzle_file = format!("puzzle_{id}.lp");
 
-        let output = String::from_utf8(
-            Command::new(&self.clingo_path)
-                .args(["lights_out.lp", "puzzle.lp", "-V0", "-q1"])
-                .output()?
-                .stdout,
-        )?;
+        let output = std::fs::write(&program_file, CLINGO_SOLVER_PROGRAM)
+            .and_then(|_| std::fs::write(&puzzle_file, puzzle_to_string(data)))
+            .map_err(SolvingError::from)
+            .and_then(|_| self.run([&program_file, &puzzle_file], cancel));
 
-        std::fs::remove_file("lights_out.lp")?;
-        std::fs::remove_file("puzzle.lp")?;
+        let _ = std::fs::remove_file(&program_file);
+        let _ = std::fs::remove_file(&puzzle_file);
+
+        let Some(output) = output? else {
+            return Ok(());
+        };
 
         let lines: Vec<&str> = output.lines().collect();
         if lines.len() == 3 {
@@ -76,6 +92,37 @@ impl Solver for Clingo {
         }
 
         Ok(())
+    }
+}
+
+impl Clingo {
+    /// Returns `None` if cancelled before clingo finished.
+    fn run(&self, files: [&str; 2], cancel: &AtomicBool) -> Result<Option<String>, SolvingError> {
+        let mut child = Command::new(&self.clingo_path)
+            .args(files)
+            .args(["-V0", "-q1"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        // Drain stdout concurrently so clingo can't block on a full pipe
+        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let reader = thread::spawn(move || {
+            let mut buf = Vec::new();
+            stdout.read_to_end(&mut buf).map(|_| buf)
+        });
+
+        while child.try_wait()?.is_none() {
+            if cancel.load(Ordering::Relaxed) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(None);
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let output = reader.join().expect("stdout reader panicked")?;
+        Ok(Some(String::from_utf8(output)?))
     }
 }
 
