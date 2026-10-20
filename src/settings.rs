@@ -21,8 +21,11 @@ pub struct Settings {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
+        let exe_path = std::env::current_exe().map_err(|e| ConfigError::Foreign(Box::new(e)))?;
+        let settings_path = exe_path.with_file_name("settings.toml");
+
         let settings = Config::builder()
-            .add_source(config::File::with_name("settings.toml"))
+            .add_source(config::File::from(settings_path))
             .build()?;
 
         let mut solver = Solver::from_str(&settings.get_string("default.solver")?)
