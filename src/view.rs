@@ -1,9 +1,8 @@
-use crate::controllers::{ParamsController, PlayController, SolveController};
+use crate::controllers::{ObjectiveController, ParamsController, PlayController, SolveController};
 use crate::data::{Params, SolverState};
 use crate::formatters::NonZeroFormatter;
+use crate::nonzero_textbox;
 use crate::widgets::GridWidget;
-use crate::{nonzero_textbox, usize_textbox};
-use druid::text::ParseFormatter;
 use druid::widget::{Button, Checkbox, Either, Flex, Label, SizedBox, TextBox, ValueTextBox};
 use druid::{
     BoxConstraints, Color, Env, Event, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx, PaintCtx,
@@ -38,7 +37,12 @@ fn build_params() -> impl Widget<SolverState> {
             Flex::column()
                 .with_child(nonzero_textbox!(states))
                 .with_default_spacer()
-                .with_child(usize_textbox!(objective)),
+                .with_child(
+                    TextBox::new()
+                        .lens(Params::objective_text)
+                        .controller(ObjectiveController)
+                        .align_left(),
+                ),
         );
 
     Flex::row()

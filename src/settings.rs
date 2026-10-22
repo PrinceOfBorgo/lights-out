@@ -9,6 +9,7 @@ pub enum Solver {
     Clingo { clingo_path: String },
     Internal,
     InternalPar { threads: usize },
+    Gaussian,
 }
 
 pub struct Settings {
@@ -36,7 +37,7 @@ impl Settings {
                 let clingo_path = settings.get_string("clingo_path")?;
                 Solver::Clingo { clingo_path }
             }
-            Solver::Internal => solver,
+            Solver::Internal | Solver::Gaussian => solver,
             Solver::InternalPar { threads: _ } => {
                 let threads = settings.get_int("threads")?.try_into().unwrap_or(0usize);
                 Solver::InternalPar { threads }

@@ -99,6 +99,7 @@ impl SolverState {
             }),
             Solver::Internal => Box::new(solver::Internal),
             Solver::InternalPar { threads } => Box::new(solver::InternalPar { threads }),
+            Solver::Gaussian => Box::new(solver::Gaussian),
         };
 
         let result = solver.solve(self, cancel);
@@ -125,6 +126,8 @@ pub struct Params {
     #[derivative(PartialEq = "ignore")]
     pub objective: usize,
     #[derivative(PartialEq = "ignore")]
+    pub objective_text: String,
+    #[derivative(PartialEq = "ignore")]
     pub puzzle: Grid,
     #[derivative(PartialEq = "ignore")]
     pub solution: Grid,
@@ -140,6 +143,7 @@ impl Params {
             columns,
             states,
             objective,
+            objective_text: objective.to_string(),
             play: false,
             puzzle: Grid::new(rows, columns, states),
             solution: Grid::new(rows, columns, states),

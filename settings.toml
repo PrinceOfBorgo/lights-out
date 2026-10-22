@@ -1,4 +1,7 @@
+# clingo_path: mandatory if using the 'clingo' solver
 clingo_path = 'C:\Program Files\clingo\clingo.exe'
+
+# Number of threads to use for parallel solvers (0 means auto)
 threads = 0
 
 [default]
@@ -6,4 +9,5 @@ rows = 3
 columns = 3
 states = 2
 objective = 1
-solver = 'internal_par'
+# Available solvers: 'internal', 'internal_par', 'clingo', 'gaussian'
+solver = 'gaussian'

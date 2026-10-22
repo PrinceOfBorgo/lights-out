@@ -49,6 +49,7 @@ The `settings.toml` file contains some default properties loaded when running th
     * `clingo`: uses *clingo* to solve an *ASP* program equivalent to the given puzzle. It needs [clingo](https://potassco.org/clingo/) to be installed and the `clingo_path` value to be configured;
     * `internal`: an optimized solver written in *Rust*;
     * `internal_par`: a parallelized version of the `internal` solver. It needs the `threads` value to be configured with the number of threads to use. If `threads` is not a positive integer, the estimated available parallelism will be used;
+    * `gaussian`: a solver written in *Rust* based on Gaussian elimination, much faster than `internal` on big grids or with many states;
 
 
 
@@ -65,3 +66,34 @@ Obviously, if the puzzle grid is rectangular, the number of possible solutions c
 
 ### **InternalPar**
 The `internal_par` solver uses the same mechanism of the `internal` one but computing `threads` solution in parallel at once, speeding up the resolution process for bigger grids.
+
+### **Gaussian**
+The `gaussian` solver uses the same row-by-row chasing as `internal`, but instead of trying every first-row configuration it keeps the first-row clicks as unknowns. Every following click count becomes a linear expression of those unknowns, and requiring the last row to reach the objective gives a system of `min(rows, columns)` linear equations modulo `states`. The system is diagonalized with integer row and column operations (which also works when `states` is not prime), so solving takes polynomial time instead of `states ^ min(rows, columns)` attempts.
+
+#### Maths
+Let `k = states`, `t = objective`, `a[i][j]` the initial state of cell `(i, j)` and `x[i][j]` the number of clicks on it, all taken modulo `k` (we assume `columns <= rows`, otherwise the grid is transposed). A cell ends up at the objective when:
+
+```
+a[i][j] + x[i][j] + x[i-1][j] + x[i+1][j] + x[i][j-1] + x[i][j+1] ≡ t   (mod k)
+```
+
+Out-of-grid terms count as `0`.
+
+1. **Unknowns**: the first-row clicks `x[0][j] = u_j` are treated as free variables `u_0, ..., u_{n-1}`, where `n = columns`.
+2. **Chasing**: the equation of cell `(i, j)` is the only one that involves `x[i+1][j]`, so:
+   ```
+   x[i+1][j] ≡ t - a[i][j] - x[i][j] - x[i-1][j] - x[i][j-1] - x[i][j+1]   (mod k)
+   ```
+   The right-hand side only uses cells from rows `i` and `i-1`. So once those rows are known in terms of the unknowns, row `i+1` is too. Row `0` is just `x[0][j] = u_j`, so by induction on `i` every `x[i][j]` can be written as an affine expression (a constant plus a linear combination) of the unknowns:
+   ```
+   x[i][j] ≡ c_0 + c_1·u_0 + c_2·u_1 + ... + c_n·u_{n-1}   (mod k)
+   ```
+   Each expression is stored as the vector of its `n + 1` coefficients `[c_0, c_1, ..., c_n]`, where `c_0` is the constant term and `c_{l+1}` is the coefficient of `u_l`. For example, `x[0][j] = u_j` is the vector with `1` at position `j + 1` and `0` everywhere else. Adding or subtracting expressions means adding or subtracting their vectors element by element modulo `k`, and the known constants (`t` and `a[i][j]`) only change `c_0`.
+3. **Final system**: the equations of the last row (`i = rows - 1`) don't have a next row to fix them. They give `n` affine conditions in the `u_l`, i.e. a system `A·u ≡ b (mod k)` with `A` an `n × n` integer matrix.
+4. **Diagonalization**: `ℤ_k` is not a field when `k` is not prime, so plain Gaussian elimination (which needs inverses) isn't enough. Instead, `A` is reduced to diagonal form `D = P·A·Q` using unimodular row and column operations (swaps, adding integer multiples, and extended-Euclid steps that use `gcd`), in the same way as the Smith normal form. The system becomes `D·v ≡ P·b`, with `u = Q·v`.
+5. **Solving diagonal equations**: each equation `d·v ≡ c (mod k)` has a solution only if `g = gcd(d, k)` divides `c`. In that case it has exactly `g` solutions: `v = (c/g)·(d/g)^{-1} + s·(k/g) (mod k)` for `s = 0..g-1`. If any equation fails this test, the puzzle can't be solved.
+6. **Back substitution**: `u = Q·v` gives the first-row clicks. Evaluating the affine expressions from step 2 then gives the full solution grid.
+
+The total number of solutions is the product of the `g` values. If this product is at most 4096, every combination is enumerated and the one with the smallest `Σ x[i][j]` is kept.
+
+When the puzzle has several solutions, the one with the fewest total clicks is chosen, as long as there are at most 4096 of them; otherwise the first one found is used.
